@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mis viajes en transporte público</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f5fb;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+    header {
+      margin-bottom: 1.5rem;
+    }
+    header h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.7rem;
+    }
+    header p {
+      margin: 0;
+      color: #555;
+      font-size: 0.95rem;
+    }
+    .upload {
+      margin-top: 1rem;
+      padding: 0.8rem 1rem;
+      border-radius: 16px;
+      background: #e0e7ff;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.9rem;
+    }
+    .upload input[type="file"] {
+      font-size: 0.85rem;
+    }
+    .muted {
+      color: #6b7280;
+      font-size: 0.8rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+      padding: 1rem 1.25rem 1.25rem;
+    }
+    .card h2 {
+      margin-top: 0;
+      font-size: 1.1rem;
+      margin-bottom: 0.75rem;
+    }
+    label {
+      display: block;
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    select {
+      width: 100%;
+      padding: 0.4rem 0.5rem;
+      border-radius: 10px;
+      border: 1px solid #cbd5f5;
+      margin-top: 0.25rem;
+      font-size: 0.9rem;
+    }
+    button {
+      margin-top: 0.75rem;
+      padding: 0.45rem 0.9rem;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      background: #4f46e5;
+      color: white;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .results {
+      margin-top: 0.8rem;
+      font-size: 0.9rem;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      background: #e5e7ff;
+      color: #312e81;
+      margin-right: 0.25rem;
+      margin-bottom: 0.25rem;
+    }
+    .summary-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 0.5rem;
+    }
+    .summary-item {
+      padding: 0.4rem 0.7rem;
+      border-radius: 10px;
+      background: #f3f4ff;
+      font-size: 0.8rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.7rem;
+      font-size: 0.8rem;
+    }
+    th, td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 0.35rem 0.4rem;
+      text-align: left;
+    }
+    th {
+      background: #eef2ff;
+      position: sticky;
+      top: 0;
+    }
+    .table-wrapper {
+      max-height: 260px;
+      overflow-y: auto;
+      margin-top: 0.5rem;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.18rem 0.6rem;
+      border-radius: 999px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      font-size: 0.78rem;
+      margin-top: 0.35rem;
+    }
+    .pill span.key {
+      font-weight: 500;
+    }
+    #error-message {
+      margin-top: 0.5rem;
+      color: #b91c1c;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Explorador de viajes</h1>
+      <p>Sube tu CSV de validaciones y explora tus trayectos por estación y por origen–destino.</p>
+      <div id="error-message"></div>
+    </header>
+
+    <div class="upload">
+      <div>
+        <strong>1.</strong> Sube el CSV original de tu tarjeta (con columnas como <code>Num.Transacción</code>, <code>Data</code>, <code>Agència</code>, <code>Operació</code>, <code>Transacció</code>, <code>Estació Fix</code>…).
+      </div>
+      <input type="file" id="file-input" accept=".csv,text/csv" />
+      <div class="muted">Los cálculos se hacen solo en tu navegador: nada se envía a ningún servidor.</div>
+    </div>
+
+    <div class="grid">
+      <!-- Estación individual -->
+      <section class="card">
+        <h2>Estación individual</h2>
+        <p class="muted">Elige una estación para ver cuántas veces entras y sales de ella (por agencia).</p>
+        <label for="single-station-select">Estación</label>
+        <select id="single-station-select" disabled>
+          <option value="">Sube primero un archivo...</option>
+        </select>
+
+        <div id="single-station-results" class="results"></div>
+      </section>
+
+      <!-- Trayecto entre dos estaciones -->
+      <section class="card">
+        <h2>Trayecto entre dos estaciones</h2>
+        <p class="muted">Elige origen y destino para analizar tus viajes en ese trayecto (en esa dirección).</p>
+
+        <label for="from-station-select">Origen</label>
+        <select id="from-station-select" disabled>
+          <option value="">Sube primero un archivo...</option>
+        </select>
+
+        <label for="to-station-select">Destino</label>
+        <select id="to-station-select" disabled>
+          <option value="">Sube primero un archivo...</option>
+        </select>
+
+        <button id="route-button" disabled>Ver trayectos</button>
+
+        <div id="route-results" class="results"></div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha inicio</th>
+                <th>Agencia</th>
+                <th>Desde</th>
+                <th>Hasta</th>
+                <th>Duración (min)</th>
+              </tr>
+            </thead>
+            <tbody id="route-trips-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- PapaParse para leer CSV cómodamente -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
