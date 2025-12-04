@@ -1,9 +1,17 @@
 let trips = []; // viajes reconstruidos (entrada/salida)
 let stations = [];
+let currentRouteTrips = []; // viajes actualmente mostrados en la tabla
+let currentSort = { column: null, asc: true };
+const MAX_ROWS = 200;
+let selectedOrigins = []; // orígenes elegidos por el usuario
+
+
 
 document.addEventListener("DOMContentLoaded", () => {
   setupFileInput();
+  setupTableSorting();
 });
+
 
 function setupFileInput() {
   const fileInput = document.getElementById("file-input");
@@ -189,8 +197,8 @@ function initStations() {
   const singleSelect = document.getElementById("single-station-select");
   const fromSelect = document.getElementById("from-station-select");
   const toSelect = document.getElementById("to-station-select");
+  const addOriginBtn = document.getElementById("add-origin-btn");
 
-  // limpiar opciones antiguas
   [singleSelect, fromSelect, toSelect].forEach((sel) => {
     sel.innerHTML = "";
   });
@@ -208,13 +216,22 @@ function initStations() {
   singleSelect.disabled = false;
   fromSelect.disabled = false;
   toSelect.disabled = false;
+  addOriginBtn.disabled = false;
   document.getElementById("route-button").disabled = false;
+
+  // reiniciamos la lista de orígenes
+  selectedOrigins = [];
+  renderSelectedOrigins();
 }
+
 
 function setupFilters() {
   const singleSelect = document.getElementById("single-station-select");
   const routeButton = document.getElementById("route-button");
+  const addOriginBtn = document.getElementById("add-origin-btn");
+  const fromSelect = document.getElementById("from-station-select");
 
+  // Estación individual
   singleSelect.addEventListener("change", () => {
     const station = singleSelect.value;
     if (!station) {
@@ -225,19 +242,57 @@ function setupFilters() {
     renderSingleStationStats(station, stats);
   });
 
+  // Añadir origen a la lista
+  addOriginBtn.addEventListener("click", () => {
+    const value = fromSelect.value;
+    if (!value) return;
+    if (!selectedOrigins.includes(value)) {
+      selectedOrigins.push(value);
+      renderSelectedOrigins();
+    }
+  });
+
+  // Botón de calcular ruta
   routeButton.addEventListener("click", () => {
-    const from = document.getElementById("from-station-select").value;
     const to = document.getElementById("to-station-select").value;
     const bidirectional = document.getElementById("bidirectional-toggle").checked;
 
-    if (!from || !to) {
-      alert("Selecciona origen y destino.");
+    if (selectedOrigins.length === 0 || !to) {
+      alert("Selecciona al menos una estación de origen (añadiéndola) y una de destino.");
       return;
     }
-    const stats = computeRouteStats(from, to, bidirectional);
-    renderRouteStats(from, to, stats, bidirectional);
+
+    const stats = computeRouteStats(selectedOrigins, to, bidirectional);
+    renderRouteStats(selectedOrigins, to, stats, bidirectional);
   });
 }
+
+function renderSelectedOrigins() {
+  const container = document.getElementById("selected-origins");
+  if (!selectedOrigins.length) {
+    container.textContent = "Ningún origen seleccionado.";
+    return;
+  }
+
+  container.innerHTML = selectedOrigins
+    .map(
+      (st) => `
+      <span class="origin-pill">
+        ${st}
+        <button type="button" onclick="removeOrigin('${st.replace(/'/g, "\\'")}')">×</button>
+      </span>
+    `
+    )
+    .join("");
+}
+
+function removeOrigin(station) {
+  selectedOrigins = selectedOrigins.filter((s) => s !== station);
+  renderSelectedOrigins();
+}
+
+
+
 
 /** Agrupación genérica por agencia */
 function groupByAgency(items) {
@@ -298,11 +353,17 @@ function renderSingleStationStats(station, stats) {
 
 /** Estadísticas de un trayecto origen–destino */
 /** Estadísticas de un trayecto origen–destino (opcionalmente bidireccional) */
-function computeRouteStats(from, to, bidirectional = false) {
+/** Estadísticas de uno o varios orígenes hacia un destino (opcionalmente bidireccional) */
+function computeRouteStats(fromStations, to, bidirectional = false) {
   const routeTrips = trips.filter((t) => {
-    const forward = t.station_in === from && t.station_out === to;
+    const forward =
+      fromStations.includes(t.station_in) && t.station_out === to;
+
     const backward =
-      bidirectional && t.station_in === to && t.station_out === from;
+      bidirectional &&
+      fromStations.includes(t.station_out) &&
+      t.station_in === to;
+
     return forward || backward;
   });
 
@@ -340,21 +401,31 @@ function computeRouteStats(from, to, bidirectional = false) {
 }
 
 
-function renderRouteStats(from, to, stats, bidirectional = false) {
+
+function renderRouteStats(fromStations, to, stats, bidirectional = false) {
   const summary = document.getElementById("route-results");
   const tbody = document.getElementById("route-trips-body");
   tbody.innerHTML = "";
 
+  const originsLabel =
+    fromStations.length === 1
+      ? fromStations[0]
+      : fromStations.length <= 3
+      ? fromStations.join(", ")
+      : `${fromStations.length} estaciones de origen`;
+
   if (!stats) {
     summary.innerHTML = `
-      <p class="muted">No se han encontrado viajes de <strong>${from}</strong> a <strong>${to}</strong> (en esa dirección).</p>
+      <p class="muted">No se han encontrado viajes de <strong>${originsLabel}</strong> a <strong>${to}</strong>.</p>
     `;
+    currentRouteTrips = [];
+    updateHeaderSortIndicators();
     return;
   }
 
   const directionText = bidirectional
-    ? `entre ${from} y ${to} (ambos sentidos)`
-    : `de ${from} a ${to}`;
+    ? `entre ${originsLabel} y ${to} (ambos sentidos)`
+    : `de ${originsLabel} a ${to}`;
 
   const byAgencyPills = Object.entries(stats.byAgency)
     .map(
@@ -405,8 +476,79 @@ function renderRouteStats(from, to, stats, bidirectional = false) {
     </div>
   `;
 
-  const maxRows = 200;
-  stats.trips.slice(0, maxRows).forEach((t) => {
+  // Guardamos los viajes actuales para poder ordenarlos
+  currentRouteTrips = stats.trips.slice();
+  currentSort = { column: null, asc: true };
+  updateHeaderSortIndicators();
+  renderRouteTable();
+}
+
+function setupTableSorting() {
+  const headers = document.querySelectorAll("table thead th");
+
+  headers.forEach((th, index) => {
+    th.style.cursor = "pointer";
+    th.addEventListener("click", () => {
+      if (!currentRouteTrips || currentRouteTrips.length === 0) return;
+
+      if (currentSort.column === index) {
+        currentSort.asc = !currentSort.asc; // alterna asc/desc
+      } else {
+        currentSort.column = index;
+        currentSort.asc = true;
+      }
+
+      sortCurrentTrips();
+      updateHeaderSortIndicators();
+      renderRouteTable();
+    });
+  });
+}
+
+function sortCurrentTrips() {
+  const col = currentSort.column;
+  const ascFactor = currentSort.asc ? 1 : -1;
+
+  currentRouteTrips.sort((a, b) => {
+    let va, vb;
+    switch (col) {
+      case 0: // Fecha inicio
+        va = a.start_time || "";
+        vb = b.start_time || "";
+        return va.localeCompare(vb) * ascFactor;
+      case 1: // Agencia
+        va = a.agency || "";
+        vb = b.agency || "";
+        return va.localeCompare(vb) * ascFactor;
+      case 2: // Desde
+        va = a.station_in || "";
+        vb = b.station_in || "";
+        return va.localeCompare(vb) * ascFactor;
+      case 3: // Hasta
+        va = a.station_out || "";
+        vb = b.station_out || "";
+        return va.localeCompare(vb) * ascFactor;
+      case 4: // Duración
+        va =
+          typeof a.duration_min === "number" && !Number.isNaN(a.duration_min)
+            ? a.duration_min
+            : Infinity;
+        vb =
+          typeof b.duration_min === "number" && !Number.isNaN(b.duration_min)
+            ? b.duration_min
+            : Infinity;
+        return (va - vb) * ascFactor;
+      default:
+        return 0;
+    }
+  });
+}
+
+function renderRouteTable() {
+  const tbody = document.getElementById("route-trips-body");
+  tbody.innerHTML = "";
+
+  currentRouteTrips.slice(0, MAX_ROWS).forEach((t) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${t.start_time || ""}</td>
@@ -418,12 +560,27 @@ function renderRouteStats(from, to, stats, bidirectional = false) {
     tbody.appendChild(tr);
   });
 
-  if (stats.trips.length > maxRows) {
+  if (currentRouteTrips.length > MAX_ROWS) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td colspan="5" class="muted">Mostrando solo los primeros ${maxRows} viajes…</td>
+      <td colspan="5" class="muted">Mostrando solo los primeros ${MAX_ROWS} viajes…</td>
     `;
     tbody.appendChild(tr);
   }
 }
+
+function updateHeaderSortIndicators() {
+  const headers = document.querySelectorAll("table thead th");
+
+  headers.forEach((th, idx) => {
+    const base = th.dataset.label || th.textContent.replace(/[▲▼]/g, "").trim();
+    if (currentSort.column === idx) {
+      th.textContent = base + (currentSort.asc ? " ▲" : " ▼");
+    } else {
+      th.textContent = base;
+    }
+  });
+}
+
+
 
