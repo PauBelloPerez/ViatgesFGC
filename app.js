@@ -228,13 +228,14 @@ function setupFilters() {
   routeButton.addEventListener("click", () => {
     const from = document.getElementById("from-station-select").value;
     const to = document.getElementById("to-station-select").value;
+    const bidirectional = document.getElementById("bidirectional-toggle").checked;
 
     if (!from || !to) {
       alert("Selecciona origen y destino.");
       return;
     }
-    const stats = computeRouteStats(from, to);
-    renderRouteStats(from, to, stats);
+    const stats = computeRouteStats(from, to, bidirectional);
+    renderRouteStats(from, to, stats, bidirectional);
   });
 }
 
@@ -296,10 +297,14 @@ function renderSingleStationStats(station, stats) {
 }
 
 /** Estadísticas de un trayecto origen–destino */
-function computeRouteStats(from, to) {
-  const routeTrips = trips.filter(
-    (t) => t.station_in === from && t.station_out === to
-  );
+/** Estadísticas de un trayecto origen–destino (opcionalmente bidireccional) */
+function computeRouteStats(from, to, bidirectional = false) {
+  const routeTrips = trips.filter((t) => {
+    const forward = t.station_in === from && t.station_out === to;
+    const backward =
+      bidirectional && t.station_in === to && t.station_out === from;
+    return forward || backward;
+  });
 
   if (routeTrips.length === 0) {
     return null;
@@ -311,11 +316,12 @@ function computeRouteStats(from, to) {
 
   let avg = null,
     min = null,
-    max = null;
+    max = null,
+    totalMinutes = null;
 
   if (durations.length > 0) {
-    const sum = durations.reduce((acc, d) => acc + d, 0);
-    avg = sum / durations.length;
+    totalMinutes = durations.reduce((acc, d) => acc + d, 0);
+    avg = totalMinutes / durations.length;
     min = Math.min(...durations);
     max = Math.max(...durations);
   }
@@ -327,12 +333,14 @@ function computeRouteStats(from, to) {
     avgDuration: avg,
     minDuration: min,
     maxDuration: max,
+    totalMinutes,
     byAgency,
     trips: routeTrips,
   };
 }
 
-function renderRouteStats(from, to, stats) {
+
+function renderRouteStats(from, to, stats, bidirectional = false) {
   const summary = document.getElementById("route-results");
   const tbody = document.getElementById("route-trips-body");
   tbody.innerHTML = "";
@@ -344,6 +352,10 @@ function renderRouteStats(from, to, stats) {
     return;
   }
 
+  const directionText = bidirectional
+    ? `entre ${from} y ${to} (ambos sentidos)`
+    : `de ${from} a ${to}`;
+
   const byAgencyPills = Object.entries(stats.byAgency)
     .map(
       ([agency, count]) =>
@@ -351,9 +363,20 @@ function renderRouteStats(from, to, stats) {
     )
     .join("");
 
+  let totalBlock = "";
+  if (stats.totalMinutes != null) {
+    const hours = stats.totalMinutes / 60;
+    const days = stats.totalMinutes / (60 * 24);
+    totalBlock = `<div class="summary-item">
+      Total: <strong>${stats.totalMinutes.toFixed(
+        1
+      )}</strong> min (~${hours.toFixed(1)} h, ~${days.toFixed(2)} días)
+    </div>`;
+  }
+
   summary.innerHTML = `
     <div class="summary-row">
-      <div class="summary-item"><strong>${stats.count}</strong> viajes de ${from} a ${to}</div>
+      <div class="summary-item"><strong>${stats.count}</strong> viajes ${directionText}</div>
       ${
         stats.avgDuration !== null
           ? `<div class="summary-item">Media: <strong>${stats.avgDuration.toFixed(
@@ -375,6 +398,7 @@ function renderRouteStats(from, to, stats) {
             )}</strong> min</div>`
           : ""
       }
+      ${totalBlock}
     </div>
     <div style="margin-top:0.5rem;">
       ${byAgencyPills}
@@ -402,3 +426,4 @@ function renderRouteStats(from, to, stats) {
     tbody.appendChild(tr);
   }
 }
+
