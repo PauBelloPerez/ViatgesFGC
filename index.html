@@ -160,6 +160,35 @@
       color: #b91c1c;
       font-size: 0.85rem;
     }
+    .origin-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+#add-origin-btn {
+  white-space: nowrap;
+}
+.origin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: #e5e7ff;
+  color: #312e81;
+  font-size: 0.78rem;
+  margin-right: 0.25rem;
+  margin-top: 0.25rem;
+}
+.origin-pill button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0;
+  line-height: 1;
+}
+
   </style>
 </head>
 <body>
@@ -190,47 +219,56 @@
 
         <div id="single-station-results" class="results"></div>
       </section>
+<section class="card">
+      <h2>Trayecto entre dos estaciones</h2>
+<p class="muted">
+  Elige una o varias estaciones de origen y un destino para analizar tus viajes (en esa dirección).
+</p>
 
-      <!-- Trayecto entre dos estaciones -->
-      <section class="card">
-        <h2>Trayecto entre dos estaciones</h2>
-        <p class="muted">Elige origen y destino para analizar tus viajes en ese trayecto (en esa dirección).</p>
+<label for="from-station-select">Origen</label>
+<div class="origin-row">
+  <select id="from-station-select" disabled>
+    <option value="">Sube primero un archivo...</option>
+  </select>
+  <button type="button" id="add-origin-btn" disabled>Añadir origen</button>
+</div>
 
-        <label for="from-station-select">Origen</label>
-        <select id="from-station-select" disabled>
-          <option value="">Sube primero un archivo...</option>
-        </select>
+<div id="selected-origins" class="muted" style="margin-top:0.4rem;">
+  Ningún origen seleccionado.
+</div>
 
-        <label for="to-station-select">Destino</label>
-        <select id="to-station-select" disabled>
-          <option value="">Sube primero un archivo...</option>
-        </select>
+<label for="to-station-select" style="margin-top:0.8rem;">Destino</label>
+<select id="to-station-select" disabled>
+  <option value="">Sube primero un archivo...</option>
+</select>
 
-        <div style="margin-top:0.5rem;">
-        <label style="display:flex;align-items:center;gap:0.4rem;font-weight:400;font-size:0.85rem;">
-            <input type="checkbox" id="bidirectional-toggle" />
-            Contar también el trayecto en sentido inverso (ida y vuelta)
-        </label>
-        </div>
+<div style="margin-top:0.5rem;">
+  <label style="display:flex;align-items:center;gap:0.4rem;font-weight:400;font-size:0.85rem;">
+    <input type="checkbox" id="bidirectional-toggle" />
+    Contar también el trayecto en sentido inverso (ida y vuelta)
+  </label>
+</div>
 
-        <button id="route-button" disabled>Ver trayectos</button>
+<button id="route-button" disabled>Ver trayectos</button>
 
-        <div id="route-results" class="results"></div>
 
-        <div class="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Fecha inicio</th>
-                <th>Agencia</th>
-                <th>Desde</th>
-                <th>Hasta</th>
-                <th>Duración (min)</th>
-              </tr>
-            </thead>
-            <tbody id="route-trips-body"></tbody>
-          </table>
-        </div>
+<div id="route-results" class="results"></div>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr>
+        <th data-label="Fecha inicio">Fecha inicio</th>
+        <th data-label="Agencia">Agencia</th>
+        <th data-label="Desde">Desde</th>
+        <th data-label="Hasta">Hasta</th>
+        <th data-label="Duración (min)">Duración (min)</th>
+      </tr>
+    </thead>
+    <tbody id="route-trips-body"></tbody>
+  </table>
+</div>
+
       </section>
     </div>
   </div>
