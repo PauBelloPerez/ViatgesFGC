@@ -4,6 +4,8 @@ let currentRouteTrips = []; // viajes actualmente mostrados en la tabla
 let currentSort = { column: null, asc: true };
 const MAX_ROWS = 200;
 let selectedOrigins = []; // orígenes elegidos por el usuario
+let rawObjectsAll = [];    // filas originales de todos los archivos
+
 
 
 
@@ -16,12 +18,52 @@ document.addEventListener("DOMContentLoaded", () => {
 function setupFileInput() {
   const fileInput = document.getElementById("file-input");
   fileInput.addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     clearError();
-    parseCSVFile(file);
+    loadFiles(files);
   });
 }
+
+function loadFiles(files) {
+  rawObjectsAll = [];
+  trips = [];
+  selectedOrigins = [];
+  renderSelectedOrigins?.(); // si existe, limpia la lista de orígenes
+  document.getElementById("single-station-results").innerHTML = "";
+  document.getElementById("route-results").innerHTML = "";
+  document.getElementById("route-trips-body").innerHTML = "";
+
+  let remaining = files.length;
+
+  files.forEach((file) => {
+    parseFileToObjects(file, (objectsFromFile) => {
+      rawObjectsAll = rawObjectsAll.concat(objectsFromFile);
+      remaining--;
+      if (remaining === 0) {
+        // cuando se han procesado todos
+        const mergedObjects = deduplicateObjects(rawObjectsAll);
+        trips = buildTripsFromRows(mergedObjects);
+        initStations();
+        setupFilters();
+      }
+    });
+  });
+}
+
+function parseFileToObjects(file, callback) {
+  const name = (file.name || "").toLowerCase();
+
+  if (name.endsWith(".csv")) {
+    parseCSVFileToObjects(file, callback);
+  } else if (name.endsWith(".xls") || name.endsWith(".xlsx")) {
+    parseExcelFileToObjects(file, callback);
+  } else {
+    showError("Formato no reconocido. Usa CSV, XLS o XLSX.");
+    callback([]);
+  }
+}
+
 
 function showError(msg) {
   document.getElementById("error-message").textContent = msg;
@@ -31,26 +73,42 @@ function clearError() {
 }
 
 function normalizeStr(x) {
-  return (x || "").toString().trim();
+  // quita BOM si lo hubiera y espacios
+  return (x ?? "").toString().replace(/^\uFEFF/, "").trim();
 }
+
+
+function parseFile(file) {
+  const name = (file.name || "").toLowerCase();
+
+  if (name.endsWith(".csv")) {
+    parseCSVFile(file);
+  } else if (name.endsWith(".xls") || name.endsWith(".xlsx")) {
+    parseExcelFile(file);
+  } else {
+    showError("Formato no reconocido. Usa CSV, XLS o XLSX.");
+  }
+}
+
+// --- CSV ---
 
 function parseCSVFile(file) {
   Papa.parse(file, {
-    header: true,
-    skipEmptyLines: true,
+    header: false,
+    skipEmptyLines: "greedy",
     complete: (results) => {
       const rows = results.data;
       if (!rows || rows.length === 0) {
-        showError("El archivo parece estar vacío o sin cabeceras.");
+        showError("El archivo parece estar vacío.");
         return;
       }
       try {
-        trips = buildTripsFromRows(rows);
-        initStations();
-        setupFilters();
+        processRows(rows);
       } catch (err) {
         console.error(err);
-        showError("Ha habido un problema procesando el archivo. Revisa que las columnas se llamen como en el original.");
+        showError(
+          "Ha habido un problema procesando el archivo CSV. Revisa que tenga columnas como 'Num.Transacción', 'Data', 'Agència', 'Operació', 'Transacció', 'Estació Fix'."
+        );
       }
     },
     error: (err) => {
@@ -60,12 +118,353 @@ function parseCSVFile(file) {
   });
 }
 
+// --- Excel (XLS/XLSX) ---
+
+function parseExcelFile(file) {
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    const data = e.target.result;
+
+    try {
+      let workbook;
+
+      // Intentamos leerlo como Excel/HTML usando SheetJS
+      try {
+        workbook = XLSX.read(data, { type: "array" });
+      } catch (xerr) {
+        console.warn("No parece un Excel estándar, pruebo como texto/CSV…", xerr);
+        // Si falla, lo interpretamos como texto (por si realmente es CSV o HTML mal renombrado)
+        const text = new TextDecoder("utf-8").decode(data);
+        return parseCSVText(text); // ↙ esta función la añadimos justo debajo
+      }
+
+      const firstSheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[firstSheetName];
+
+      // Obtenemos filas crudas (array de arrays)
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        raw: false,
+        blankrows: false,
+      });
+
+      if (!rows || rows.length === 0) {
+        showError("La hoja de Excel está vacía.");
+        return;
+      }
+
+      processRows(rows); // reutilizamos la lógica común
+    } catch (err) {
+      console.error(err);
+      showError(
+        "Ha habido un problema procesando el archivo Excel. Revisa que tenga columnas como 'Num.Transacción', 'Data', 'Agència', 'Operació', 'Transacció', 'Estació Fix'."
+      );
+    }
+  };
+
+  // MUY IMPORTANTE: leer como ArrayBuffer
+  reader.onerror = (err) => {
+    console.error(err);
+    showError("Error leyendo el archivo Excel.");
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Si el "xls" en realidad es un CSV/HTML travestido, usamos PapaParse sobre el texto
+function parseCSVText(text) {
+  Papa.parse(text, {
+    header: false,
+    skipEmptyLines: "greedy",
+    complete: (results) => {
+      const rows = results.data;
+      if (!rows || rows.length === 0) {
+        showError("El archivo parece estar vacío.");
+        return;
+      }
+      processRows(rows);
+    },
+    error: (err) => {
+      console.error(err);
+      showError("Error interpretando el archivo como CSV.");
+    },
+  });
+}
+
+function parseCSVFileToObjects(file, callback) {
+  Papa.parse(file, {
+    header: false,
+    skipEmptyLines: "greedy",
+    complete: (results) => {
+      const rows = results.data;
+      if (!rows || rows.length === 0) {
+        showError(`El archivo ${file.name} parece estar vacío.`);
+        callback([]);
+        return;
+      }
+      try {
+        const objs = processRowsToObjects(rows);
+        callback(objs);
+      } catch (err) {
+        console.error(err);
+        showError(
+          `Problema procesando ${file.name}. Revisa que tenga columnas como 'Num.Transacción', 'Data', 'Agència', 'Operació', 'Transacció', 'Estació Fix'.`
+        );
+        callback([]);
+      }
+    },
+    error: (err) => {
+      console.error(err);
+      showError(`Error leyendo el CSV ${file.name}.`);
+      callback([]);
+    },
+  });
+}
+
+function parseExcelFileToObjects(file, callback) {
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    const data = e.target.result;
+
+    try {
+      let workbook;
+
+      try {
+        workbook = XLSX.read(data, { type: "array" });
+      } catch (xerr) {
+        console.warn(
+          `No parece un Excel estándar (${file.name}), intento como texto/CSV…`,
+          xerr
+        );
+        const text = new TextDecoder("utf-8").decode(data);
+        return parseTextToObjects(text, file.name, callback);
+      }
+
+      const firstSheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[firstSheetName];
+
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        raw: false,
+        blankrows: false,
+      });
+
+      if (!rows || rows.length === 0) {
+        showError(`La hoja de Excel de ${file.name} está vacía.`);
+        callback([]);
+        return;
+      }
+
+      const objs = processRowsToObjects(rows);
+      callback(objs);
+    } catch (err) {
+      console.error(err);
+      showError(
+        `Ha habido un problema procesando el archivo Excel ${file.name}.`
+      );
+      callback([]);
+    }
+  };
+
+  reader.onerror = (err) => {
+    console.error(err);
+    showError(`Error leyendo el archivo Excel ${file.name}.`);
+    callback([]);
+  };
+
+  reader.readAsArrayBuffer(file);
+}
+
+function parseTextToObjects(text, fileName, callback) {
+  Papa.parse(text, {
+    header: false,
+    skipEmptyLines: "greedy",
+    complete: (results) => {
+      const rows = results.data;
+      if (!rows || rows.length === 0) {
+        showError(`El archivo ${fileName} parece estar vacío.`);
+        callback([]);
+        return;
+      }
+      try {
+        const objs = processRowsToObjects(rows);
+        callback(objs);
+      } catch (err) {
+        console.error(err);
+        showError(
+          `Problema interpretando ${fileName} como CSV. Revisa que tenga las columnas esperadas.`
+        );
+        callback([]);
+      }
+    },
+    error: (err) => {
+      console.error(err);
+      showError(`Error interpretando ${fileName} como CSV.`);
+      callback([]);
+    },
+  });
+}
+
+
+
+function processRows(rows) {
+  const { headerRow, dataRows } = detectHeaderAndDataRows(rows);
+
+  if (!headerRow) {
+    showError(
+      "No he encontrado una fila con nombres de columna como 'Num.Transacción', 'Data', 'Agència', 'Operació', 'Transacció', 'Estació Fix'."
+    );
+    return;
+  }
+
+  const headerNames = headerRow.map((h) => normalizeStr(h));
+
+  const objects = dataRows.map((row) => {
+    const obj = {};
+    headerNames.forEach((name, idx) => {
+      if (!name) return;
+      obj[name] = row[idx];
+    });
+    return obj;
+  });
+
+  trips = buildTripsFromRows(objects);
+  initStations();
+  setupFilters();
+}
+
+
+
+function detectHeaderAndDataRows(rows) {
+  // columnas que esperamos encontrar
+  const expected = [
+    "Num.Transacción",
+    "Data",
+    "Agència",
+    "Operació",
+    "Transacció",
+    "Estació Fix",
+  ].map((s) => s.toLowerCase());
+
+  let bestIndex = -1;
+  let bestScore = 0;
+
+  const maxCheck = Math.min(rows.length, 20); // miramos las primeras 20 filas como mucho
+
+  for (let i = 0; i < maxCheck; i++) {
+    const row = rows[i] || [];
+    const lowerRow = row.map((c) => normalizeStr(c).toLowerCase());
+    let score = 0;
+
+    expected.forEach((col) => {
+      if (lowerRow.includes(col)) score++;
+    });
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+
+  // exigimos al menos 3 columnas reconocidas para confiar en esa fila
+  if (bestIndex === -1 || bestScore < 3) {
+    return { headerRow: null, dataRows: [] };
+  }
+
+  const headerRow = rows[bestIndex];
+  const dataRows = rows.slice(bestIndex + 1);
+  return { headerRow, dataRows };
+}
+
+function processRowsToObjects(rows) {
+  const { headerRow, dataRows } = detectHeaderAndDataRows(rows);
+
+  if (!headerRow) {
+    throw new Error(
+      "No he encontrado una fila con nombres de columna como 'Num.Transacción', 'Data', 'Agència', 'Operació', 'Transacció', 'Estació Fix'."
+    );
+  }
+
+  const headerNames = headerRow.map((h) => normalizeStr(h));
+
+  const objects = dataRows.map((row) => {
+    const obj = {};
+    headerNames.forEach((name, idx) => {
+      if (!name) return;
+      obj[name] = row[idx];
+    });
+    return obj;
+  });
+
+  return objects;
+}
+
+function deduplicateObjects(objs) {
+  const seen = new Set();
+  const result = [];
+
+  objs.forEach((o) => {
+    const key = [
+      "Data",
+      "Num.Transacción",
+      "Agència",
+      "Operació",
+      "Transacció",
+      "Estació Fix",
+    ]
+      .map((k) => normalizeStr(o[k]))
+      .join("|");
+
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push(o);
+  });
+
+  return result;
+}
+
+
 function parseDateTime(str) {
   if (!str) return null;
-  const s = str.replace(" ", "T");
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+  const s = normalizeStr(str);
+  if (!s) return null;
+
+  // 1) Intento directo tipo ISO: "2025-01-07 09:10:29"
+  if (s.match(/^\d{4}-\d{2}-\d{2}/)) {
+    const isoLike = s.replace(" ", "T");
+    const d1 = new Date(isoLike);
+    if (!isNaN(d1.getTime())) return d1;
+  }
+
+  // 2) Formato dd/mm/yyyy hh:mm[:ss] -> lo convertimos a ISO
+  const m = s.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})[ T](\d{2}:\d{2}(?::\d{2})?)$/
+  );
+  if (m) {
+    let day = m[1].padStart(2, "0");
+    let month = m[2].padStart(2, "0");
+    let year = m[3];
+    let time = m[4];
+
+    if (year.length === 2) {
+      const yy = parseInt(year, 10);
+      year = (yy < 50 ? "20" : "19") + year;
+    }
+
+    if (time.length === 5) {
+      time = time + ":00"; // hh:mm -> hh:mm:00
+    }
+
+    const iso = `${year}-${month}-${day}T${time}`;
+    const d2 = new Date(iso);
+    if (!isNaN(d2.getTime())) return d2;
+  }
+
+  // Si nada funciona, devolvemos null
+  return null;
 }
+
 
 /**
  * A partir de las observaciones originales:
@@ -290,7 +689,6 @@ function removeOrigin(station) {
   selectedOrigins = selectedOrigins.filter((s) => s !== station);
   renderSelectedOrigins();
 }
-
 
 
 
