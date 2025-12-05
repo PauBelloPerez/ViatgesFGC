@@ -203,7 +203,11 @@
       <div>
         <strong>1.</strong> Sube el CSV original de tu tarjeta (con columnas como <code>Num.Transacción</code>, <code>Data</code>, <code>Agència</code>, <code>Operació</code>, <code>Transacció</code>, <code>Estació Fix</code>…).
       </div>
-      <input type="file" id="file-input" accept=".csv,text/csv" />
+      <input
+        type="file"
+        id="file-input"
+        multiple
+        accept=".csv,text/csv,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/>
       <div class="muted">Los cálculos se hacen solo en tu navegador: nada se envía a ningún servidor.</div>
     </div>
 
@@ -273,8 +277,9 @@
     </div>
   </div>
 
-  <!-- PapaParse para leer CSV cómodamente -->
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script src="app.js" defer></script>
+ <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="app.js" defer></script>
+
 </body>
 </html>
